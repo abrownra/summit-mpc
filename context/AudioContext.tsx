@@ -75,7 +75,7 @@ function scheduleSynthHit(padId: number, time: number, dest: Tone.ToneAudioNode)
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isStarted, setIsStarted] = useState(false);
-  const [bpm, setBpmState] = useState(90);
+  const [bpm, setBpmState] = useState(130);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pads, setPads] = useState<Pad[]>(DEFAULT_PADS);
   const [masterVolume, setMasterVolumeState] = useState(0.8);
@@ -92,7 +92,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [mutedPads, setMutedPads] = useState<Set<number>>(new Set());
 
   const isStartedRef = useRef(false);
-  const bpmRef = useRef(90);
+  const bpmRef = useRef(130);
   const stepCountRef = useRef(16);
   const players = useRef<Map<number, Tone.Player>>(new Map());
   const pitchShifters = useRef<Map<number, Tone.PitchShift>>(new Map());
