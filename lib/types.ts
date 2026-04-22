@@ -1,4 +1,19 @@
-export type PadMode = "pads" | "chopper" | "keys" | "recorder";
+export type PadMode = "pads" | "chopper" | "keys" | "seq" | "recorder";
+
+export type Pattern = boolean[][];
+
+export interface SavedProject {
+  id: string;
+  name: string;
+  savedAt: number;
+  bpm: number;
+  pattern: Pattern;
+  pads: Array<{
+    id: number; label: string; color: string;
+    pitch: number; volume: number; reverse: boolean;
+    sampleUrl?: string;
+  }>;
+}
 
 export interface Pad {
   id: number;

@@ -2,7 +2,9 @@
 
 import { useAudio } from "@/context/AudioContext";
 
-export default function Transport() {
+interface Props { onProjectsOpen: () => void; }
+
+export default function Transport({ onProjectsOpen }: Props) {
   const { bpm, setBpm, isPlaying, togglePlay, masterVolume, setMasterVolume } = useAudio();
 
   return (
@@ -53,6 +55,15 @@ export default function Transport() {
           className="flex-1 accent-[var(--accent)] h-1"
         />
       </div>
+
+      {/* Projects */}
+      <button
+        onClick={onProjectsOpen}
+        className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white transition-colors text-lg"
+        title="Projects"
+      >
+        💾
+      </button>
     </div>
   );
 }

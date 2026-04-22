@@ -6,6 +6,7 @@ const TABS: { id: PadMode; label: string; icon: string }[] = [
   { id: "pads", label: "PADS", icon: "⬛" },
   { id: "chopper", label: "CHOP", icon: "✂️" },
   { id: "keys", label: "KEYS", icon: "🎹" },
+  { id: "seq", label: "SEQ", icon: "🎛" },
   { id: "recorder", label: "REC", icon: "🎙" },
 ];
 

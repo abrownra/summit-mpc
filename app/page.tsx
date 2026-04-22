@@ -7,23 +7,28 @@ import PadGrid from "@/components/PadGrid";
 import SampleChopper from "@/components/SampleChopper";
 import ChordKeys from "@/components/ChordKeys";
 import VocalRecorder from "@/components/VocalRecorder";
+import Sequencer from "@/components/Sequencer";
+import ProjectManager from "@/components/ProjectManager";
 import BottomNav from "@/components/BottomNav";
 import { PadMode } from "@/lib/types";
 
 function App() {
   const [mode, setMode] = useState<PadMode>("pads");
+  const [showProjects, setShowProjects] = useState(false);
   const { isStarted, startAudio } = useAudio();
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <Transport />
+      <Transport onProjectsOpen={() => setShowProjects(true)} />
       <main className="flex-1 overflow-hidden relative">
         {mode === "pads" && <PadGrid />}
         {mode === "chopper" && <SampleChopper />}
         {mode === "keys" && <ChordKeys />}
+        {mode === "seq" && <Sequencer />}
         {mode === "recorder" && <VocalRecorder />}
       </main>
       <BottomNav active={mode} onChange={setMode} />
+      {showProjects && <ProjectManager onClose={() => setShowProjects(false)} />}
 
       {/* Tap-to-start overlay — required for Web Audio API on mobile */}
       {!isStarted && (
