@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { useAudio } from "@/context/AudioContext";
 import { PadMode } from "@/lib/types";
 
@@ -16,6 +17,32 @@ export default function Transport({ onProjectsOpen, mode }: Props) {
     quantizeEnabled, setQuantizeEnabled,
   } = useAudio();
 
+  // Tap tempo
+  const tapTimes = useRef<number[]>([]);
+  const tapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTapTempo = () => {
+    const now = Date.now();
+    tapTimes.current.push(now);
+    // Reset after 2s of no taps
+    if (tapTimeout.current) clearTimeout(tapTimeout.current);
+    tapTimeout.current = setTimeout(() => { tapTimes.current = []; }, 2000);
+    // Need at least 2 taps to compute
+    if (tapTimes.current.length < 2) return;
+    // Keep only last 8 taps
+    if (tapTimes.current.length > 8) tapTimes.current = tapTimes.current.slice(-8);
+    const intervals = tapTimes.current.slice(1).map((t, i) => t - tapTimes.current[i]);
+    const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const tapped = Math.round(60000 / avg);
+    setBpm(Math.max(40, Math.min(300, tapped)));
+  };
+
+  // Bar:beat from loopPosition
+  const totalBeats = loopBars * 4;
+  const beatIndex = Math.floor(loopPosition * totalBeats);
+  const bar = Math.floor(beatIndex / 4) + 1;
+  const beat = (beatIndex % 4) + 1;
+
   return (
     <div className="flex flex-col border-b border-[var(--border)] bg-[var(--surface)] shrink-0">
       {/* Single compact row */}
@@ -31,14 +58,26 @@ export default function Transport({ onProjectsOpen, mode }: Props) {
           {isPlaying ? "■" : "▶"}
         </button>
 
-        {/* BPM */}
+        {/* BPM — tap to set tempo */}
         <div className="flex items-center gap-0.5 shrink-0">
           <button onPointerDown={() => setBpm(Math.max(40, bpm - 1))} className="w-5 h-5 rounded bg-[var(--surface2)] text-[10px] leading-none">−</button>
-          <div className="w-8 text-center">
+          <button
+            onPointerDown={handleTapTempo}
+            className="w-10 text-center active:opacity-60 transition-opacity"
+            title="Tap to set BPM"
+          >
             <div className="text-white font-bold text-xs leading-none tabular-nums">{bpm}</div>
-            <div className="text-[8px] text-gray-600 leading-none">BPM</div>
-          </div>
+            <div className="text-[8px] text-gray-600 leading-none">TAP</div>
+          </button>
           <button onPointerDown={() => setBpm(Math.min(300, bpm + 1))} className="w-5 h-5 rounded bg-[var(--surface2)] text-[10px] leading-none">+</button>
+        </div>
+
+        {/* Bar:beat position */}
+        <div className="shrink-0 text-center" style={{ minWidth: "2rem" }}>
+          <div className="text-[10px] font-bold tabular-nums" style={{ color: isPlaying ? "var(--accent2)" : "var(--border)" }}>
+            {bar}.{beat}
+          </div>
+          <div className="text-[7px] text-gray-700 leading-none">BAR</div>
         </div>
 
         {/* Divider */}

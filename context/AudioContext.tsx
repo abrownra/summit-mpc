@@ -12,7 +12,7 @@ interface AudioContextValue {
   bpm: number; setBpm: (bpm: number) => void;
   isPlaying: boolean; togglePlay: () => void;
   pads: Pad[]; setPads: React.Dispatch<React.SetStateAction<Pad[]>>;
-  triggerPad: (padId: number) => void;
+  triggerPad: (padId: number, velocity?: number) => void;
   loadSampleToPad: (padId: number, file: File) => Promise<void>;
   loadSampleUrlToPad: (padId: number, url: string, name: string) => Promise<void>;
   beatMatchPad: (padId: number) => Promise<BeatMatchInfo | null>;
@@ -52,24 +52,44 @@ const DEFAULT_PADS: Pad[] = Array.from({ length: 16 }, (_, i) => ({
 
 const EMPTY_PATTERN = (): Pattern => Array.from({ length: 16 }, () => new Array(16).fill(false));
 
-function scheduleSynthHit(padId: number, time: number, dest: Tone.ToneAudioNode) {
+function scheduleSynthHit(padId: number, time: number, dest: Tone.ToneAudioNode, velocity = 0.8) {
+  const vol = Tone.gainToDb(velocity);
   if (padId === 0 || padId === 4 || padId === 8 || padId === 12) {
-    const s = new Tone.MembraneSynth({ pitchDecay: 0.07, octaves: 6 }).connect(dest);
+    // Kick — punchy with pitch drop
+    const s = new Tone.MembraneSynth({
+      pitchDecay: 0.05, octaves: 10,
+      envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.1 },
+    }).connect(dest);
+    s.volume.value = vol + 2;
     s.triggerAttackRelease("C1", "8n", time);
-    setTimeout(() => s.dispose(), 600);
+    setTimeout(() => s.dispose(), 700);
   } else if (padId === 1 || padId === 5 || padId === 9 || padId === 13) {
-    const s = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.05 } }).connect(dest);
+    // Snare — noise burst with a bit of body
+    const s = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.001, decay: 0.18, sustain: 0.01, release: 0.06 },
+    }).connect(dest);
+    s.volume.value = vol;
     s.triggerAttackRelease("16n", time);
     setTimeout(() => s.dispose(), 400);
   } else if (padId === 2 || padId === 6 || padId === 10 || padId === 14) {
-    const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.08, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 }).connect(dest);
-    s.triggerAttackRelease(400, "32n", time);
-    setTimeout(() => s.dispose(), 300);
+    // Hi-hat closed — tight and high
+    const s = new Tone.MetalSynth({
+      envelope: { attack: 0.001, decay: 0.05, release: 0.01 },
+      harmonicity: 5.1, modulationIndex: 40, resonance: 5000, octaves: 1.5,
+    }).connect(dest);
+    s.volume.value = vol - 4;
+    s.triggerAttackRelease(800, "32n", time);
+    setTimeout(() => s.dispose(), 200);
   } else {
-    const notes = ["G1","A1","B1","D2","E2","F#2"];
-    const s = new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 3, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.1 } }).connect(dest);
-    s.triggerAttackRelease(notes[padId % notes.length], "16n", time);
-    setTimeout(() => s.dispose(), 500);
+    // Open hat / ride — longer decay
+    const s = new Tone.MetalSynth({
+      envelope: { attack: 0.001, decay: 0.35, release: 0.1 },
+      harmonicity: 3.1, modulationIndex: 20, resonance: 3500, octaves: 1.2,
+    }).connect(dest);
+    s.volume.value = vol - 6;
+    s.triggerAttackRelease(600, "16n", time);
+    setTimeout(() => s.dispose(), 600);
   }
 }
 
@@ -148,7 +168,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               if (player.state === "started") player.stop(time);
               player.start(time + swingDelay);
             } else {
-              scheduleSynthHit(padId, time + swingDelay, dest);
+              scheduleSynthHit(padId, time + swingDelay, dest, pad?.volume ?? 0.8);
             }
           }
         }
@@ -486,14 +506,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     return info;
   }, []);
 
-  const triggerPad = useCallback(async (padId: number) => {
+  const triggerPad = useCallback(async (padId: number, velocity = 0.8) => {
     if (!isStartedRef.current) await startAudio();
     const player = players.current.get(padId);
     const pad = pads.find(p => p.id === padId);
     if (!pad) return;
-    if (!player) { scheduleSynthHit(padId, Tone.now(), masterGain.current ?? Tone.getDestination()); return; }
+    const effectiveVol = pad.volume * velocity;
+    const dest = masterGain.current ?? Tone.getDestination();
+    if (!player) { scheduleSynthHit(padId, Tone.now(), dest, effectiveVol); return; }
     player.reverse = pad.reverse;
-    player.volume.value = Tone.gainToDb(pad.volume);
+    player.volume.value = Tone.gainToDb(effectiveVol);
     if (!pitchShifters.current.has(padId)) player.playbackRate = Math.pow(2, pad.pitch / 12);
     if (player.state === "started") player.stop();
     player.start();

@@ -17,7 +17,7 @@ export default function PadGrid() {
   const activePointerCount = useRef(0);
 
   const handlePadDown = useCallback(
-    (padId: number) => {
+    (padId: number, pressure: number) => {
       activePointerCount.current += 1;
       // Cancel any pending long-press the moment a second finger lands
       if (activePointerCount.current > 1) {
@@ -25,8 +25,12 @@ export default function PadGrid() {
         longPressPad.current = null;
       }
       setActivePads(prev => new Set(prev).add(padId));
-      triggerPad(padId);
+      // Use pointer pressure for velocity (most devices report 0.5 as default)
+      const velocity = pressure > 0 && pressure < 1 ? 0.4 + pressure * 0.6 : 0.8;
+      triggerPad(padId, velocity);
       if (isLoopRecording && quantizeEnabled) recordPadHit(padId);
+      // Haptic feedback
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(8);
       if (activePointerCount.current === 1) {
         longPressPad.current = padId;
         longPressTimer.current = setTimeout(() => {
@@ -35,7 +39,7 @@ export default function PadGrid() {
         }, 600);
       }
     },
-    [triggerPad]
+    [triggerPad, isLoopRecording, quantizeEnabled, recordPadHit]
   );
 
   const handlePadUp = useCallback((padId: number) => {
@@ -79,7 +83,7 @@ export default function PadGrid() {
           return (
             <div
               key={pad.id}
-              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); handlePadDown(pad.id); }}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); handlePadDown(pad.id, e.pressure); }}
               onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); handlePadUp(pad.id); }}
               onPointerCancel={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); handlePadUp(pad.id); }}
               onContextMenu={(e) => e.preventDefault()}
