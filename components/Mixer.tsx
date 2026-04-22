@@ -88,15 +88,32 @@ export default function Mixer() {
           <span className="text-[9px] text-gray-600 font-bold tracking-widest">PADS</span>
         </div>
         {pads.map(pad => (
-          <VolumeRow
-            key={pad.id}
-            color={pad.sampleUrl ? pad.color : "#444"}
-            label={pad.label}
-            volume={pad.volume}
-            muted={mutedPads.has(pad.id)}
-            onVolume={v => setPads(prev => prev.map(p => p.id === pad.id ? { ...p, volume: v } : p))}
-            onMute={() => togglePadMute(pad.id)}
-          />
+          <div key={pad.id}>
+            <VolumeRow
+              color={pad.sampleUrl ? pad.color : "#444"}
+              label={pad.label}
+              volume={pad.volume}
+              muted={mutedPads.has(pad.id)}
+              onVolume={v => setPads(prev => prev.map(p => p.id === pad.id ? { ...p, volume: v } : p))}
+              onMute={() => togglePadMute(pad.id)}
+            />
+            {/* Swing sub-row — only shown if non-zero or pad has a sample */}
+            <div className="flex items-center gap-2 px-3 pb-1.5 -mt-1">
+              <div className="w-2.5 shrink-0" />
+              <span className="text-[8px] text-gray-700 w-14 shrink-0">swing</span>
+              <div className="w-7 shrink-0" />
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={pad.swing ?? 0}
+                onChange={e => setPads(prev => prev.map(p => p.id === pad.id ? { ...p, swing: parseFloat(e.target.value) } : p))}
+                className="flex-1 h-0.5 accent-[var(--accent2)]"
+                style={{ touchAction: "none" }}
+              />
+              <span className="text-[8px] text-gray-700 w-8 text-right tabular-nums shrink-0">
+                {Math.round((pad.swing ?? 0) * 100)}%
+              </span>
+            </div>
+          </div>
         ))}
 
         {/* Loop layers section */}

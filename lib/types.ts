@@ -20,9 +20,10 @@ export interface Pad {
   label: string;
   color: string;
   sampleUrl?: string;
-  pitch: number; // semitone offset
-  volume: number; // 0-1
+  pitch: number;   // semitone offset
+  volume: number;  // 0-1
   reverse: boolean;
+  swing: number;   // 0-1 — delays off-beat 16ths (0 = straight, 1 = full triplet swing)
 }
 
 export interface SampleSlice {

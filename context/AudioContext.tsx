@@ -47,7 +47,7 @@ interface AudioContextValue {
 const AudioCtx = createContext<AudioContextValue | null>(null);
 
 const DEFAULT_PADS: Pad[] = Array.from({ length: 16 }, (_, i) => ({
-  id: i, label: `PAD ${i + 1}`, color: PAD_COLORS[i], pitch: 0, volume: 0.8, reverse: false,
+  id: i, label: `PAD ${i + 1}`, color: PAD_COLORS[i], pitch: 0, volume: 0.8, reverse: false, swing: 0,
 }));
 
 const EMPTY_PATTERN = (): Pattern => Array.from({ length: 16 }, () => new Array(16).fill(false));
@@ -136,14 +136,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           if (s < stepCountRef.current && patternRef.current[padId]?.[s] && !mutedPadsRef.current.has(padId)) {
             const player = players.current.get(padId);
             const pad = padsRef.current.find(p => p.id === padId);
+            // Per-pad swing: delay odd 16th steps by swing * half-a-16th
+            const isOffBeat = s % 2 === 1;
+            const swingDelay = isOffBeat && pad?.swing
+              ? pad.swing * Tone.Time("16n").toSeconds() * 0.5
+              : 0;
             if (player && pad) {
               player.volume.value = Tone.gainToDb(pad.volume);
               player.reverse = pad.reverse;
               if (!pitchShifters.current.has(padId)) player.playbackRate = Math.pow(2, pad.pitch / 12);
               if (player.state === "started") player.stop(time);
-              player.start(time);
+              player.start(time + swingDelay);
             } else {
-              scheduleSynthHit(padId, time, dest);
+              scheduleSynthHit(padId, time + swingDelay, dest);
             }
           }
         }

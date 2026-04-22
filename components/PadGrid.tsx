@@ -197,6 +197,25 @@ export default function PadGrid() {
               <span className="text-xs text-white w-6 text-right">{Math.round(editPad.volume * 100)}</span>
             </div>
 
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-xs text-gray-400 w-12">Swing</span>
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={editPad.swing ?? 0}
+                onChange={(e) =>
+                  setPads((prev) =>
+                    prev.map((p) =>
+                      p.id === editPad.id ? { ...p, swing: parseFloat(e.target.value) } : p
+                    )
+                  )
+                }
+                className="flex-1 accent-[var(--accent2)]"
+              />
+              <span className="text-xs text-white w-8 text-right tabular-nums">
+                {Math.round((editPad.swing ?? 0) * 100)}%
+              </span>
+            </div>
+
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400 w-12">Reverse</span>
               <button
