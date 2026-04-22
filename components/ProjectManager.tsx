@@ -16,14 +16,26 @@ function timeAgo(ms: number): string {
 }
 
 export default function ProjectManager({ onClose }: Props) {
-  const { bpm, setBpm, pads, setPads, pattern, loadPattern, setStepCount, loadSampleUrlToPad } = useAudio();
+  const { bpm, setBpm, pads, setPads, pattern, loadPattern, setStepCount, loadSampleUrlToPad, clearPattern, loopLayers, deleteLoopLayer } = useAudio();
   const [projects, setProjects] = useState<SavedProject[]>([]);
   const [projectName, setProjectName] = useState("Untitled");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmNew, setConfirmNew] = useState(false);
 
   useEffect(() => { setProjects(listProjects()); }, []);
+
+  const handleNew = () => {
+    setBpm(90);
+    setStepCount(16);
+    clearPattern();
+    setPads(prev => prev.map(p => ({ ...p, label: `PAD ${p.id + 1}`, sampleUrl: undefined, pitch: 0, volume: 0.8, reverse: false })));
+    [...loopLayers].forEach(l => deleteLoopLayer(l.id));
+    setProjectName("Untitled");
+    setConfirmNew(false);
+    onClose();
+  };
 
   const handleSave = () => {
     setSaving(true);
@@ -78,6 +90,21 @@ export default function ProjectManager({ onClose }: Props) {
         <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
           <span className="font-bold text-sm text-[var(--accent)]">PROJECTS</span>
           <button onClick={onClose} className="text-gray-400 text-lg w-8 h-8 flex items-center justify-center">✕</button>
+        </div>
+
+        {/* New project */}
+        <div className="flex gap-2 px-4 pb-3 shrink-0 border-b border-[var(--border)]">
+          {confirmNew ? (
+            <>
+              <span className="flex-1 text-xs text-gray-400 flex items-center">Clear everything and start fresh?</span>
+              <button onClick={handleNew} className="px-3 py-2 rounded-lg bg-[var(--red)] text-white text-xs font-bold">YES, CLEAR</button>
+              <button onClick={() => setConfirmNew(false)} className="px-3 py-2 rounded-lg border border-[var(--border)] text-gray-400 text-xs">Cancel</button>
+            </>
+          ) : (
+            <button onClick={() => setConfirmNew(true)} className="flex-1 py-2 rounded-lg bg-[var(--surface2)] border border-[var(--border)] text-xs text-gray-300 font-bold">
+              + NEW PROJECT
+            </button>
+          )}
         </div>
 
         {/* Save current */}
