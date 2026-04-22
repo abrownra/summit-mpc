@@ -9,6 +9,7 @@ import ChordKeys from "@/components/ChordKeys";
 import Sequencer from "@/components/Sequencer";
 import ProjectManager from "@/components/ProjectManager";
 import LoopLayers from "@/components/LoopLayers";
+import Mixer from "@/components/Mixer";
 import BottomNav from "@/components/BottomNav";
 import { PadMode } from "@/lib/types";
 
@@ -25,6 +26,7 @@ function App() {
         {mode === "chopper" && <SampleChopper />}
         {mode === "keys" && <ChordKeys />}
         {mode === "seq" && <Sequencer />}
+        {mode === "mixer" && <Mixer />}
         {mode === "recorder" && <LoopLayers />}
       </main>
       <BottomNav active={mode} onChange={setMode} />

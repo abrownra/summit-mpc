@@ -1,4 +1,4 @@
-export type PadMode = "pads" | "chopper" | "keys" | "seq" | "recorder";
+export type PadMode = "pads" | "chopper" | "keys" | "seq" | "recorder" | "mixer";
 
 export type Pattern = boolean[][];
 
@@ -48,6 +48,7 @@ export interface LoopLayer {
   duration: number; // seconds
   bars: number;     // how many bars it spans
   muted: boolean;
+  volume: number;   // 0-1
   createdAt: number;
 }
 

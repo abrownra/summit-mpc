@@ -39,6 +39,9 @@ interface AudioContextValue {
   // Quantize
   quantizeEnabled: boolean; setQuantizeEnabled: (on: boolean) => void;
   recordPadHit: (padId: number) => void; // called by PadGrid when quantize is on
+  // Mixer
+  mutedPads: Set<number>; togglePadMute: (padId: number) => void;
+  setLayerVolume: (id: string, volume: number) => void;
 }
 
 const AudioCtx = createContext<AudioContextValue | null>(null);
@@ -86,6 +89,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [loopLayers, setLoopLayers] = useState<LoopLayer[]>([]);
   const [loopPosition, setLoopPosition] = useState(0);
   const [quantizeEnabled, setQuantizeEnabledState] = useState(false);
+  const [mutedPads, setMutedPads] = useState<Set<number>>(new Set());
 
   const isStartedRef = useRef(false);
   const bpmRef = useRef(90);
@@ -108,6 +112,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const mutedLayersRef = useRef<Set<string>>(new Set());
   const loopRAFRef = useRef<number>(0);
   const quantizeEnabledRef = useRef(false);
+  const mutedPadsRef = useRef<Set<number>>(new Set());
   const quantizeEventsRef = useRef<Array<{ padId: number; time: number }>>([]);
   const quantizeRecordingRef = useRef(false);
   const quantizeStartTimeRef = useRef(0);
@@ -128,7 +133,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const s = step as number;
         const dest = masterGain.current ?? Tone.getDestination();
         for (let padId = 0; padId < 16; padId++) {
-          if (s < stepCountRef.current && patternRef.current[padId]?.[s]) {
+          if (s < stepCountRef.current && patternRef.current[padId]?.[s] && !mutedPadsRef.current.has(padId)) {
             const player = players.current.get(padId);
             const pad = padsRef.current.find(p => p.id === padId);
             if (player && pad) {
@@ -275,7 +280,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }, `${bars}m`, 0);
       loopLayerSchedulesRef.current.set(id, schedId);
 
-      setLoopLayers(prev => [...prev, { id, url, blob, duration, bars, muted: false, createdAt: Date.now() }]);
+      setLoopLayers(prev => [...prev, { id, url, blob, duration, bars, muted: false, volume: 1, createdAt: Date.now() }]);
       setIsLoopRecording(false);
       isLoopRecordingRef.current = false;
     };
@@ -355,6 +360,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const setQuantizeEnabled = useCallback((on: boolean) => {
     setQuantizeEnabledState(on);
     quantizeEnabledRef.current = on;
+  }, []);
+
+  const togglePadMute = useCallback((padId: number) => {
+    setMutedPads(prev => {
+      const next = new Set(prev);
+      if (next.has(padId)) next.delete(padId); else next.add(padId);
+      mutedPadsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const setLayerVolume = useCallback((id: string, volume: number) => {
+    setLoopLayers(prev => prev.map(l => l.id === id ? { ...l, volume } : l));
+    const player = loopLayerPlayersRef.current.get(id);
+    if (player) player.volume.value = Tone.gainToDb(Math.max(0.0001, volume));
   }, []);
 
   // Called by PadGrid on every hit when quantize recording is active.
@@ -542,6 +562,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       loopLayers, deleteLoopLayer, toggleMuteLayer, undoLastLayer,
       loopPosition,
       quantizeEnabled, setQuantizeEnabled, recordPadHit,
+      mutedPads, togglePadMute, setLayerVolume,
     }}>
       {children}
     </AudioCtx.Provider>
