@@ -5,10 +5,11 @@ import WaveSurfer from "wavesurfer.js";
 import { SampleSlice } from "@/lib/types";
 import { useAudio } from "@/context/AudioContext";
 import SampleBrowser from "@/components/SampleBrowser";
+import { detectBPM } from "@/lib/beatDetect";
 import * as Tone from "tone";
 
 export default function SampleChopper() {
-  const { startAudio, isStarted } = useAudio();
+  const { startAudio, isStarted, bpm: projectBpm } = useAudio();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
   const [slices, setSlices] = useState<SampleSlice[]>([]);
@@ -18,6 +19,9 @@ export default function SampleChopper() {
   const [duration, setDuration] = useState(0);
   const [selStart, setSelStart] = useState<number | null>(null);
   const [selEnd, setSelEnd] = useState<number | null>(null);
+  const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [stretchRate, setStretchRate] = useState(1);
   const [isSelecting, setIsSelecting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioUrlRef = useRef<string | null>(null);
@@ -105,13 +109,34 @@ export default function SampleChopper() {
   const playSlice = async (slice: SampleSlice) => {
     if (!audioUrlRef.current) return;
     if (!isStarted) await startAudio();
-    const player = new Tone.Player(audioUrlRef.current);
+    const player = new Tone.Player();
     await player.load(audioUrlRef.current);
-    player.toDestination();
-    const offset = slice.start;
-    const dur = slice.end - slice.start;
-    player.start(Tone.now(), offset, dur);
-    setTimeout(() => player.dispose(), dur * 1000 + 500);
+    player.playbackRate = stretchRate;
+    if (stretchRate !== 1) {
+      const shifter = new Tone.PitchShift({ pitch: -12 * Math.log2(stretchRate) });
+      player.connect(shifter);
+      shifter.toDestination();
+      const dur = (slice.end - slice.start) / stretchRate;
+      player.start(Tone.now(), slice.start, slice.end - slice.start);
+      setTimeout(() => { player.dispose(); shifter.dispose(); }, dur * 1000 + 500);
+    } else {
+      player.toDestination();
+      const dur = slice.end - slice.start;
+      player.start(Tone.now(), slice.start, dur);
+      setTimeout(() => player.dispose(), dur * 1000 + 500);
+    }
+  };
+
+  const handleMatchBpm = async () => {
+    if (!audioUrlRef.current) return;
+    setIsDetecting(true);
+    try {
+      const detected = await detectBPM(audioUrlRef.current);
+      setDetectedBpm(detected);
+      setStretchRate(projectBpm / detected);
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   const autoSlice = () => {
@@ -177,6 +202,23 @@ export default function SampleChopper() {
               />
             ))}
           </div>
+
+          {/* Beat match bar */}
+          <button
+            onClick={handleMatchBpm}
+            disabled={isDetecting}
+            className={`w-full py-2 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 ${
+              detectedBpm
+                ? "bg-[var(--green)]/20 border-[var(--green)] text-[var(--green)]"
+                : "bg-[var(--surface2)] border-[var(--border)] text-gray-300"
+            }`}
+          >
+            {isDetecting
+              ? "Detecting BPM..."
+              : detectedBpm
+              ? `MATCHED ${detectedBpm} → ${projectBpm} BPM (${stretchRate.toFixed(2)}x) — tap to re-detect`
+              : "AUTO MATCH BPM"}
+          </button>
 
           <div className="flex gap-2">
             <button

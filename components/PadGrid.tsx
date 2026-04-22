@@ -5,10 +5,11 @@ import { useAudio } from "@/context/AudioContext";
 import SampleBrowser from "@/components/SampleBrowser";
 
 export default function PadGrid() {
-  const { pads, triggerPad, loadSampleToPad, loadSampleUrlToPad, setPads } = useAudio();
+  const { pads, triggerPad, loadSampleToPad, loadSampleUrlToPad, setPads, beatMatchPad, beatMatchInfo, bpm } = useAudio();
   const [activePad, setActivePad] = useState<number | null>(null);
   const [editingPad, setEditingPad] = useState<number | null>(null);
   const [browserForPad, setBrowserForPad] = useState<number | null>(null);
+  const [matchingPad, setMatchingPad] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPadRef = useRef<number | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +113,32 @@ export default function PadGrid() {
                 Browse Sounds
               </button>
             </div>
+
+            {/* Beat match */}
+            {editPad.sampleUrl && (() => {
+              const info = beatMatchInfo.get(editPad.id);
+              return (
+                <button
+                  disabled={matchingPad === editPad.id}
+                  onClick={async () => {
+                    setMatchingPad(editPad.id);
+                    await beatMatchPad(editPad.id);
+                    setMatchingPad(null);
+                  }}
+                  className={`w-full py-2 rounded-lg text-sm font-bold mb-3 border transition-colors ${
+                    info?.active
+                      ? "bg-[var(--green)]/20 border-[var(--green)] text-[var(--green)]"
+                      : "bg-[var(--surface2)] border-[var(--border)] text-gray-300"
+                  } disabled:opacity-40`}
+                >
+                  {matchingPad === editPad.id
+                    ? "Detecting BPM..."
+                    : info?.active
+                    ? `MATCHED ${info.detectedBpm} → ${bpm} BPM (${info.rate.toFixed(2)}x)`
+                    : "AUTO MATCH BPM"}
+                </button>
+              );
+            })()}
 
             <div className="flex items-center gap-3 mb-3">
               <span className="text-xs text-gray-400 w-12">Pitch</span>
