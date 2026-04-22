@@ -6,9 +6,9 @@ import Transport from "@/components/Transport";
 import PadGrid from "@/components/PadGrid";
 import SampleChopper from "@/components/SampleChopper";
 import ChordKeys from "@/components/ChordKeys";
-import VocalRecorder from "@/components/VocalRecorder";
 import Sequencer from "@/components/Sequencer";
 import ProjectManager from "@/components/ProjectManager";
+import LoopLayers from "@/components/LoopLayers";
 import BottomNav from "@/components/BottomNav";
 import { PadMode } from "@/lib/types";
 
@@ -25,7 +25,7 @@ function App() {
         {mode === "chopper" && <SampleChopper />}
         {mode === "keys" && <ChordKeys />}
         {mode === "seq" && <Sequencer />}
-        {mode === "recorder" && <VocalRecorder />}
+        {mode === "recorder" && <LoopLayers />}
       </main>
       <BottomNav active={mode} onChange={setMode} />
       {showProjects && <ProjectManager onClose={() => setShowProjects(false)} />}

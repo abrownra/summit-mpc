@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import * as Tone from "tone";
-import { Pad, PAD_COLORS, Pattern } from "@/lib/types";
+import { Pad, PAD_COLORS, Pattern, LoopLayer } from "@/lib/types";
 import { detectBPM, rateToSemitones } from "@/lib/beatDetect";
 
 interface BeatMatchInfo { detectedBpm: number; rate: number; active: boolean; }
@@ -27,6 +27,14 @@ interface AudioContextValue {
   // Volume
   masterVolume: number; setMasterVolume: (v: number) => void;
   startAudio: () => Promise<void>;
+  // Loop engine
+  loopBars: number; setLoopBars: (n: number) => void;
+  metronomeActive: boolean; setMetronomeActive: (on: boolean) => void;
+  isLoopRecording: boolean; loopRecord: () => void;
+  loopLayers: LoopLayer[];
+  deleteLoopLayer: (id: string) => void;
+  toggleMuteLayer: (id: string) => void;
+  loopPosition: number;
 }
 
 const AudioCtx = createContext<AudioContextValue | null>(null);
@@ -68,6 +76,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [pattern, setPattern] = useState<Pattern>(EMPTY_PATTERN());
   const [currentStep, setCurrentStep] = useState(-1);
   const [stepCount, setStepCountState] = useState(16);
+  const [loopBars, setLoopBarsState] = useState(2);
+  const [metronomeActive, setMetronomeActiveState] = useState(false);
+  const [isLoopRecording, setIsLoopRecording] = useState(false);
+  const [loopLayers, setLoopLayers] = useState<LoopLayer[]>([]);
+  const [loopPosition, setLoopPosition] = useState(0);
 
   const isStartedRef = useRef(false);
   const bpmRef = useRef(90);
@@ -79,6 +92,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const patternRef = useRef<Pattern>(EMPTY_PATTERN());
   const padsRef = useRef<Pad[]>(DEFAULT_PADS);
   const seqRef = useRef<Tone.Sequence | null>(null);
+  const loopBarsRef = useRef(2);
+  const metronomeActiveRef = useRef(false);
+  const metronomeSeqRef = useRef<Tone.Sequence | null>(null);
+  const isLoopRecordingRef = useRef(false);
+  const loopMRRef = useRef<MediaRecorder | null>(null);
+  const loopLayerPlayersRef = useRef<Map<string, Tone.Player>>(new Map());
+  const loopLayerSchedulesRef = useRef<Map<string, number>>(new Map());
+  const mutedLayersRef = useRef<Set<string>>(new Set());
+  const loopRAFRef = useRef<number>(0);
 
   // Keep refs in sync with state
   useEffect(() => { patternRef.current = pattern; }, [pattern]);
@@ -117,6 +139,35 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     seq.start(0);
     seqRef.current = seq;
 
+    // Metronome — 4 beats per bar, downbeat louder
+    const metroSeq = new Tone.Sequence(
+      (time, beat) => {
+        if (!metronomeActiveRef.current) return;
+        const dest = masterGain.current ?? Tone.getDestination();
+        const isDown = beat === 0;
+        const s = new Tone.MetalSynth({
+          envelope: { attack: 0.001, decay: isDown ? 0.12 : 0.05, release: 0.01 },
+          harmonicity: isDown ? 2 : 5,
+          modulationIndex: 12,
+          resonance: isDown ? 600 : 1400,
+          octaves: isDown ? 0.8 : 0.3,
+        }).connect(dest);
+        s.volume.value = isDown ? -6 : -14;
+        s.triggerAttackRelease(isDown ? 600 : 1200, "32n", time);
+        setTimeout(() => s.dispose(), 250);
+      },
+      [0, 1, 2, 3],
+      "4n"
+    );
+    metroSeq.start(0);
+    metronomeSeqRef.current = metroSeq;
+
+    // Enable transport loop
+    const t = Tone.getTransport();
+    t.loop = true;
+    t.loopStart = 0;
+    t.loopEnd = `${loopBarsRef.current}m`;
+
     isStartedRef.current = true;
     setIsStarted(true);
   }, []);
@@ -132,15 +183,134 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     stepCountRef.current = n;
   }, []);
 
+  const setLoopBars = useCallback((n: number) => {
+    setLoopBarsState(n);
+    loopBarsRef.current = n;
+    const t = Tone.getTransport();
+    t.loop = true;
+    t.loopStart = 0;
+    t.loopEnd = `${n}m`;
+  }, []);
+
+  const setMetronomeActive = useCallback((on: boolean) => {
+    setMetronomeActiveState(on);
+    metronomeActiveRef.current = on;
+  }, []);
+
+  const loopRecord = useCallback(async () => {
+    // Toggle off
+    if (isLoopRecordingRef.current) {
+      loopMRRef.current?.stop();
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      alert("Microphone permission denied.");
+      return;
+    }
+
+    if (!isStartedRef.current) await startAudio();
+    const t = Tone.getTransport();
+    if (t.state !== "started") {
+      t.start();
+      setIsPlaying(true);
+    }
+
+    const beatMs = (60 / bpmRef.current) * 1000;
+    const durationMs = loopBarsRef.current * 4 * beatMs;
+
+    // Snap to next bar boundary
+    let delayMs = 0;
+    try {
+      const nextBar = t.nextSubdivision("1m");
+      delayMs = Math.max(0, (nextBar - Tone.now()) * 1000);
+    } catch { /* transport not started yet, record immediately */ }
+
+    const chunks: Blob[] = [];
+    const mr = new MediaRecorder(stream, { mimeType: "audio/webm" });
+    loopMRRef.current = mr;
+
+    mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = () => {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      const url = URL.createObjectURL(blob);
+      const bars = loopBarsRef.current;
+      const duration = bars * 4 * (60 / bpmRef.current);
+      const id = crypto.randomUUID();
+
+      // Create a looping player for this layer
+      const player = new Tone.Player(url);
+      player.connect(masterGain.current ?? Tone.getDestination());
+      loopLayerPlayersRef.current.set(id, player);
+
+      // Schedule to restart at every loop boundary
+      const schedId = Tone.getTransport().scheduleRepeat((time) => {
+        if (mutedLayersRef.current.has(id)) return;
+        const p = loopLayerPlayersRef.current.get(id);
+        if (!p) return;
+        if (p.state === "started") p.stop(time);
+        p.start(time);
+      }, `${bars}m`, 0);
+      loopLayerSchedulesRef.current.set(id, schedId);
+
+      setLoopLayers(prev => [...prev, { id, url, blob, duration, bars, muted: false, createdAt: Date.now() }]);
+      setIsLoopRecording(false);
+      isLoopRecordingRef.current = false;
+      stream.getTracks().forEach(t => t.stop());
+    };
+
+    setTimeout(() => {
+      mr.start(100);
+      setIsLoopRecording(true);
+      isLoopRecordingRef.current = true;
+      setTimeout(() => { if (isLoopRecordingRef.current) mr.stop(); }, durationMs);
+    }, delayMs);
+  }, [startAudio]);
+
+  const deleteLoopLayer = useCallback((id: string) => {
+    const schedId = loopLayerSchedulesRef.current.get(id);
+    if (schedId !== undefined) Tone.getTransport().clear(schedId);
+    loopLayerSchedulesRef.current.delete(id);
+    const player = loopLayerPlayersRef.current.get(id);
+    if (player) { if (player.state === "started") player.stop(); player.dispose(); }
+    loopLayerPlayersRef.current.delete(id);
+    mutedLayersRef.current.delete(id);
+    setLoopLayers(prev => prev.filter(l => l.id !== id));
+  }, []);
+
+  const toggleMuteLayer = useCallback((id: string) => {
+    setLoopLayers(prev => prev.map(l => {
+      if (l.id !== id) return l;
+      const muted = !l.muted;
+      if (muted) {
+        mutedLayersRef.current.add(id);
+        loopLayerPlayersRef.current.get(id)?.stop();
+      } else {
+        mutedLayersRef.current.delete(id);
+      }
+      return { ...l, muted };
+    }));
+  }, []);
+
   const togglePlay = useCallback(async () => {
     if (!isStartedRef.current) await startAudio();
     if (Tone.getTransport().state === "started") {
       Tone.getTransport().stop();
       setIsPlaying(false);
       setCurrentStep(-1);
+      setLoopPosition(0);
+      cancelAnimationFrame(loopRAFRef.current);
     } else {
       Tone.getTransport().start();
       setIsPlaying(true);
+      const tick = () => {
+        setLoopPosition(Tone.getTransport().progress ?? 0);
+        loopRAFRef.current = requestAnimationFrame(tick);
+      };
+      loopRAFRef.current = requestAnimationFrame(tick);
     }
   }, [startAudio]);
 
@@ -283,6 +453,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       pattern, toggleStep, clearPattern, loadPattern, currentStep, stepCount, setStepCount,
       bounce,
       masterVolume, setMasterVolume, startAudio,
+      loopBars, setLoopBars, metronomeActive, setMetronomeActive,
+      isLoopRecording, loopRecord,
+      loopLayers, deleteLoopLayer, toggleMuteLayer,
+      loopPosition,
     }}>
       {children}
     </AudioCtx.Provider>

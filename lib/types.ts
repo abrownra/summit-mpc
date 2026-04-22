@@ -41,6 +41,16 @@ export interface RecordingTake {
   createdAt: number;
 }
 
+export interface LoopLayer {
+  id: string;
+  url: string;
+  blob: Blob;
+  duration: number; // seconds
+  bars: number;     // how many bars it spans
+  muted: boolean;
+  createdAt: number;
+}
+
 export interface Project {
   id: string;
   name: string;
