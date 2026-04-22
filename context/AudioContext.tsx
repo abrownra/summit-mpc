@@ -95,6 +95,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const loopBarsRef = useRef(2);
   const metronomeActiveRef = useRef(false);
   const metronomeSeqRef = useRef<Tone.Sequence | null>(null);
+  const metroSynthRef = useRef<Tone.Synth | null>(null);
   const isLoopRecordingRef = useRef(false);
   const loopMRRef = useRef<MediaRecorder | null>(null);
   const loopLayerPlayersRef = useRef<Map<string, Tone.Player>>(new Map());
@@ -139,22 +140,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     seq.start(0);
     seqRef.current = seq;
 
-    // Metronome — 4 beats per bar, downbeat louder
+    // Metronome — single reusable synth routed DIRECTLY to destination,
+    // bypassing masterGain so clicks are never captured in loop recordings.
+    const metroSynth = new Tone.Synth({
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.01 },
+    }).toDestination();
+    metroSynth.volume.value = -8;
+    metroSynthRef.current = metroSynth;
+
     const metroSeq = new Tone.Sequence(
       (time, beat) => {
         if (!metronomeActiveRef.current) return;
-        const dest = masterGain.current ?? Tone.getDestination();
         const isDown = beat === 0;
-        const s = new Tone.MetalSynth({
-          envelope: { attack: 0.001, decay: isDown ? 0.12 : 0.05, release: 0.01 },
-          harmonicity: isDown ? 2 : 5,
-          modulationIndex: 12,
-          resonance: isDown ? 600 : 1400,
-          octaves: isDown ? 0.8 : 0.3,
-        }).connect(dest);
-        s.volume.value = isDown ? -6 : -14;
-        s.triggerAttackRelease(isDown ? 600 : 1200, "32n", time);
-        setTimeout(() => s.dispose(), 250);
+        metroSynth.triggerAttackRelease(isDown ? "C5" : "G4", "32n", time);
       },
       [0, 1, 2, 3],
       "4n"
