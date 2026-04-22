@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface2: #1e1e1e;
+  --border: #2a2a2a;
+  --accent: #ff6b35;
+  --accent2: #a855f7;
+  --green: #22c55e;
+  --red: #ef4444;
+}
+
+@theme inline {
+  --font-mono: var(--font-mono);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: #fff;
+  font-family: var(--font-mono), monospace;
+  overscroll-behavior: none;
+}
+
+/* Pad press animation */
+.pad-active {
+  transform: scale(0.93);
+  transition: transform 0.05s ease;
+}
