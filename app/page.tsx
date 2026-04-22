@@ -19,7 +19,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <Transport onProjectsOpen={() => setShowProjects(true)} />
+      <Transport onProjectsOpen={() => setShowProjects(true)} mode={mode} />
       <main className="flex-1 overflow-hidden relative">
         {mode === "pads" && <PadGrid />}
         {mode === "chopper" && <SampleChopper />}

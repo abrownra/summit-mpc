@@ -30,7 +30,7 @@ interface AudioContextValue {
   // Loop engine
   loopBars: number; setLoopBars: (n: number) => void;
   metronomeActive: boolean; setMetronomeActive: (on: boolean) => void;
-  isLoopRecording: boolean; loopRecord: () => void;
+  isLoopRecording: boolean; loopRecord: (source: "mic" | "output") => void;
   loopLayers: LoopLayer[];
   deleteLoopLayer: (id: string) => void;
   toggleMuteLayer: (id: string) => void;
@@ -197,18 +197,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     metronomeActiveRef.current = on;
   }, []);
 
-  const loopRecord = useCallback(async () => {
+  const loopRecord = useCallback(async (source: "mic" | "output") => {
     // Toggle off
     if (isLoopRecordingRef.current) {
       loopMRRef.current?.stop();
-      return;
-    }
-
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      alert("Microphone permission denied.");
       return;
     }
 
@@ -217,6 +209,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (t.state !== "started") {
       t.start();
       setIsPlaying(true);
+    }
+
+    let stream: MediaStream;
+    let captureDest: MediaStreamAudioDestinationNode | null = null;
+
+    if (source === "mic") {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        alert("Microphone permission denied.");
+        return;
+      }
+    } else {
+      // Tap the master gain into a capture destination
+      const rawCtx = Tone.getContext().rawContext as AudioContext;
+      captureDest = rawCtx.createMediaStreamDestination();
+      masterGain.current?.connect(captureDest as unknown as Tone.ToneAudioNode);
+      stream = captureDest.stream;
     }
 
     const beatMs = (60 / bpmRef.current) * 1000;
@@ -235,18 +245,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     mr.onstop = () => {
+      if (captureDest) masterGain.current?.disconnect(captureDest as unknown as Tone.ToneAudioNode);
+      if (source === "mic") stream.getTracks().forEach(tr => tr.stop());
+
       const blob = new Blob(chunks, { type: "audio/webm" });
       const url = URL.createObjectURL(blob);
       const bars = loopBarsRef.current;
       const duration = bars * 4 * (60 / bpmRef.current);
       const id = crypto.randomUUID();
 
-      // Create a looping player for this layer
       const player = new Tone.Player(url);
       player.connect(masterGain.current ?? Tone.getDestination());
       loopLayerPlayersRef.current.set(id, player);
 
-      // Schedule to restart at every loop boundary
       const schedId = Tone.getTransport().scheduleRepeat((time) => {
         if (mutedLayersRef.current.has(id)) return;
         const p = loopLayerPlayersRef.current.get(id);
@@ -259,7 +270,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setLoopLayers(prev => [...prev, { id, url, blob, duration, bars, muted: false, createdAt: Date.now() }]);
       setIsLoopRecording(false);
       isLoopRecordingRef.current = false;
-      stream.getTracks().forEach(t => t.stop());
     };
 
     setTimeout(() => {

@@ -62,7 +62,7 @@ export default function LoopLayers() {
 
       {/* Quick record shortcut */}
       <button
-        onPointerDown={loopRecord}
+        onPointerDown={() => loopRecord("mic")}
         className={`w-full py-3 rounded-xl text-sm font-bold border-2 transition-all ${
           isLoopRecording
             ? "bg-[var(--red)] border-[var(--red)] text-white animate-pulse"

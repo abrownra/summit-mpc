@@ -1,12 +1,13 @@
 "use client";
 
 import { useAudio } from "@/context/AudioContext";
+import { PadMode } from "@/lib/types";
 
-interface Props { onProjectsOpen: () => void; }
+interface Props { onProjectsOpen: () => void; mode: PadMode; }
 
 const BAR_OPTIONS = [1, 2, 4, 8] as const;
 
-export default function Transport({ onProjectsOpen }: Props) {
+export default function Transport({ onProjectsOpen, mode }: Props) {
   const {
     bpm, setBpm, isPlaying, togglePlay, masterVolume, setMasterVolume,
     loopBars, setLoopBars, metronomeActive, setMetronomeActive,
@@ -100,13 +101,13 @@ export default function Transport({ onProjectsOpen }: Props) {
 
         {/* Record button */}
         <button
-          onPointerDown={loopRecord}
+          onPointerDown={() => loopRecord(mode === "recorder" ? "mic" : "output")}
           className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 transition-colors border-2 ${
             isLoopRecording
               ? "bg-[var(--red)] border-[var(--red)] text-white animate-pulse"
               : "bg-[var(--surface2)] border-[var(--red)] text-[var(--red)]"
           }`}
-          title="Loop Record"
+          title={mode === "recorder" ? "Record mic" : "Record output"}
         >
           {isLoopRecording ? "■" : "●"}
         </button>
