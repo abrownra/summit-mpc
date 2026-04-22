@@ -5,7 +5,7 @@ import { useAudio } from "@/context/AudioContext";
 import SampleBrowser from "@/components/SampleBrowser";
 
 export default function PadGrid() {
-  const { pads, triggerPad, loadSampleToPad, loadSampleUrlToPad, setPads, beatMatchPad, beatMatchInfo, bpm } = useAudio();
+  const { pads, triggerPad, loadSampleToPad, loadSampleUrlToPad, setPads, beatMatchPad, beatMatchInfo, bpm, recordPadHit, isLoopRecording, quantizeEnabled } = useAudio();
   const [activePads, setActivePads] = useState<Set<number>>(new Set());
   const [editingPad, setEditingPad] = useState<number | null>(null);
   const [browserForPad, setBrowserForPad] = useState<number | null>(null);
@@ -26,6 +26,7 @@ export default function PadGrid() {
       }
       setActivePads(prev => new Set(prev).add(padId));
       triggerPad(padId);
+      if (isLoopRecording && quantizeEnabled) recordPadHit(padId);
       if (activePointerCount.current === 1) {
         longPressPad.current = padId;
         longPressTimer.current = setTimeout(() => {

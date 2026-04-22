@@ -12,6 +12,8 @@ export default function Transport({ onProjectsOpen, mode }: Props) {
     bpm, setBpm, isPlaying, togglePlay,
     loopBars, setLoopBars, metronomeActive, setMetronomeActive,
     isLoopRecording, loopRecord, loopPosition,
+    undoLastLayer, loopLayers,
+    quantizeEnabled, setQuantizeEnabled,
   } = useAudio();
 
   return (
@@ -66,9 +68,25 @@ export default function Transport({ onProjectsOpen, mode }: Props) {
               ? "bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)]"
               : "bg-[var(--surface2)] border-[var(--border)] text-gray-600"
           }`}
+          title="Metronome"
         >
           ♩
         </button>
+
+        {/* Quantize — only meaningful on PADS view */}
+        {mode === "pads" && (
+          <button
+            onClick={() => setQuantizeEnabled(!quantizeEnabled)}
+            className={`px-1.5 h-7 rounded text-[9px] font-bold shrink-0 border transition-colors ${
+              quantizeEnabled
+                ? "bg-[var(--green)]/20 border-[var(--green)] text-[var(--green)]"
+                : "bg-[var(--surface2)] border-[var(--border)] text-gray-600"
+            }`}
+            title="Quantize to 16th"
+          >
+            Q
+          </button>
+        )}
 
         {/* Spacer */}
         <div className="flex-1" />
@@ -83,6 +101,16 @@ export default function Transport({ onProjectsOpen, mode }: Props) {
           }`}
         >
           {isLoopRecording ? "■" : "●"}
+        </button>
+
+        {/* Undo last layer */}
+        <button
+          onClick={undoLastLayer}
+          disabled={loopLayers.length === 0}
+          className="w-8 h-8 flex items-center justify-center text-gray-500 disabled:opacity-20 shrink-0 text-base"
+          title="Undo last layer"
+        >
+          ↩
         </button>
 
         {/* Projects */}

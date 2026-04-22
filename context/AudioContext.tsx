@@ -34,7 +34,11 @@ interface AudioContextValue {
   loopLayers: LoopLayer[];
   deleteLoopLayer: (id: string) => void;
   toggleMuteLayer: (id: string) => void;
+  undoLastLayer: () => void;
   loopPosition: number;
+  // Quantize
+  quantizeEnabled: boolean; setQuantizeEnabled: (on: boolean) => void;
+  recordPadHit: (padId: number) => void; // called by PadGrid when quantize is on
 }
 
 const AudioCtx = createContext<AudioContextValue | null>(null);
@@ -81,6 +85,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isLoopRecording, setIsLoopRecording] = useState(false);
   const [loopLayers, setLoopLayers] = useState<LoopLayer[]>([]);
   const [loopPosition, setLoopPosition] = useState(0);
+  const [quantizeEnabled, setQuantizeEnabledState] = useState(false);
 
   const isStartedRef = useRef(false);
   const bpmRef = useRef(90);
@@ -102,6 +107,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const loopLayerSchedulesRef = useRef<Map<string, number>>(new Map());
   const mutedLayersRef = useRef<Set<string>>(new Set());
   const loopRAFRef = useRef<number>(0);
+  const quantizeEnabledRef = useRef(false);
+  const quantizeEventsRef = useRef<Array<{ padId: number; time: number }>>([]);
+  const quantizeRecordingRef = useRef(false);
+  const quantizeStartTimeRef = useRef(0);
 
   // Keep refs in sync with state
   useEffect(() => { patternRef.current = pattern; }, [pattern]);
@@ -271,6 +280,44 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       isLoopRecordingRef.current = false;
     };
 
+    // Quantize mode: capture pad events → write to pattern instead of audio
+    if (source === "output" && quantizeEnabledRef.current) {
+      quantizeEventsRef.current = [];
+      const sixteenthMs = beatMs / 4;
+      const totalSteps = loopBarsRef.current * stepCountRef.current;
+
+      setTimeout(() => {
+        quantizeRecordingRef.current = true;
+        quantizeStartTimeRef.current = Tone.now();
+        setIsLoopRecording(true);
+        isLoopRecordingRef.current = true;
+
+        setTimeout(() => {
+          quantizeRecordingRef.current = false;
+          setIsLoopRecording(false);
+          isLoopRecordingRef.current = false;
+
+          // Snap each event to nearest 16th note step
+          for (const evt of quantizeEventsRef.current) {
+            const stepF = (evt.time * 1000) / sixteenthMs;
+            const step = Math.round(stepF) % totalSteps;
+            if (step >= 0 && step < stepCountRef.current) {
+              // Write to pattern if not already on
+              if (!patternRef.current[evt.padId]?.[step]) {
+                setPattern(prev => {
+                  const next = prev.map(row => [...row]);
+                  next[evt.padId][step] = true;
+                  patternRef.current = next;
+                  return next;
+                });
+              }
+            }
+          }
+        }, durationMs);
+      }, delayMs);
+      return;
+    }
+
     setTimeout(() => {
       mr.start(100);
       setIsLoopRecording(true);
@@ -288,6 +335,34 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     loopLayerPlayersRef.current.delete(id);
     mutedLayersRef.current.delete(id);
     setLoopLayers(prev => prev.filter(l => l.id !== id));
+  }, []);
+
+  const undoLastLayer = useCallback(() => {
+    setLoopLayers(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      const schedId = loopLayerSchedulesRef.current.get(last.id);
+      if (schedId !== undefined) Tone.getTransport().clear(schedId);
+      loopLayerSchedulesRef.current.delete(last.id);
+      const player = loopLayerPlayersRef.current.get(last.id);
+      if (player) { if (player.state === "started") player.stop(); player.dispose(); }
+      loopLayerPlayersRef.current.delete(last.id);
+      mutedLayersRef.current.delete(last.id);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const setQuantizeEnabled = useCallback((on: boolean) => {
+    setQuantizeEnabledState(on);
+    quantizeEnabledRef.current = on;
+  }, []);
+
+  // Called by PadGrid on every hit when quantize recording is active.
+  // Records the event time relative to loop start for later snapping.
+  const recordPadHit = useCallback((padId: number) => {
+    if (!quantizeRecordingRef.current) return;
+    const elapsed = (Tone.now() - quantizeStartTimeRef.current);
+    quantizeEventsRef.current.push({ padId, time: elapsed });
   }, []);
 
   const toggleMuteLayer = useCallback((id: string) => {
@@ -464,8 +539,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       masterVolume, setMasterVolume, startAudio,
       loopBars, setLoopBars, metronomeActive, setMetronomeActive,
       isLoopRecording, loopRecord,
-      loopLayers, deleteLoopLayer, toggleMuteLayer,
+      loopLayers, deleteLoopLayer, toggleMuteLayer, undoLastLayer,
       loopPosition,
+      quantizeEnabled, setQuantizeEnabled, recordPadHit,
     }}>
       {children}
     </AudioCtx.Provider>
