@@ -43,7 +43,7 @@ export default function PadGrid() {
       clearTimeout(longPressTimer.current);
       longPressPad.current = null;
     }
-    setTimeout(() => setActivePads(prev => { const n = new Set(prev); n.delete(padId); return n; }), 80);
+    setActivePads(prev => { const n = new Set(prev); n.delete(padId); return n; });
   }, []);
 
   const openFilePicker = (padId: number) => {
@@ -72,31 +72,37 @@ export default function PadGrid() {
 
   return (
     <div className="flex flex-col h-full p-3 gap-3">
-      <div className="grid grid-cols-4 gap-2 flex-1">
-        {pads.map((pad) => (
-          <button
-            key={pad.id}
-            onPointerDown={() => handlePadDown(pad.id)}
-            onPointerUp={() => handlePadUp(pad.id)}
-            onPointerLeave={() => handlePadUp(pad.id)}
-            className={`rounded-lg flex flex-col items-center justify-center gap-1 select-none transition-transform active:scale-95 ${
-              activePads.has(pad.id) ? "brightness-150" : "brightness-100"
-            }`}
-            style={{
-              backgroundColor: pad.sampleUrl ? `${pad.color}33` : "var(--surface2)",
-              border: `2px solid ${pad.sampleUrl ? pad.color : "var(--border)"}`,
-              boxShadow: activePads.has(pad.id) ? `0 0 12px ${pad.color}88` : "none",
-            }}
-          >
+      <div className="grid grid-cols-4 gap-2 flex-1" style={{ touchAction: "none" }}>
+        {pads.map((pad) => {
+          const isActive = activePads.has(pad.id);
+          return (
             <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: pad.sampleUrl ? pad.color : "#333" }}
-            />
-            <span className="text-[9px] text-gray-400 text-center px-1 leading-tight line-clamp-2">
-              {pad.label}
-            </span>
-          </button>
-        ))}
+              key={pad.id}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); handlePadDown(pad.id); }}
+              onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); handlePadUp(pad.id); }}
+              onPointerCancel={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); handlePadUp(pad.id); }}
+              onContextMenu={(e) => e.preventDefault()}
+              className="rounded-lg flex flex-col items-center justify-center gap-1 select-none cursor-pointer"
+              style={{
+                touchAction: "none",
+                backgroundColor: isActive
+                  ? pad.sampleUrl ? `${pad.color}55` : "#2a2a2a"
+                  : pad.sampleUrl ? `${pad.color}33` : "var(--surface2)",
+                border: `2px solid ${pad.sampleUrl ? pad.color : "var(--border)"}`,
+                boxShadow: isActive ? `0 0 16px ${pad.color}99` : "none",
+                transform: isActive ? "scale(0.95)" : "scale(1)",
+              }}
+            >
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: pad.sampleUrl ? pad.color : "#333" }}
+              />
+              <span className="text-[9px] text-gray-400 text-center px-1 leading-tight line-clamp-2">
+                {pad.label}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <p className="text-[10px] text-gray-600 text-center">
