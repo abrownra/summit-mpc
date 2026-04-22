@@ -2,11 +2,13 @@
 
 import { useRef, useState, useCallback } from "react";
 import { useAudio } from "@/context/AudioContext";
+import SampleBrowser from "@/components/SampleBrowser";
 
 export default function PadGrid() {
-  const { pads, triggerPad, loadSampleToPad, setPads } = useAudio();
+  const { pads, triggerPad, loadSampleToPad, loadSampleUrlToPad, setPads } = useAudio();
   const [activePad, setActivePad] = useState<number | null>(null);
   const [editingPad, setEditingPad] = useState<number | null>(null);
+  const [browserForPad, setBrowserForPad] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPadRef = useRef<number | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,6 +43,14 @@ export default function PadGrid() {
     e.target.value = "";
   };
 
+  const handleBrowserSelect = async (url: string, name: string) => {
+    if (browserForPad !== null) {
+      await loadSampleUrlToPad(browserForPad, url, name);
+    }
+    setBrowserForPad(null);
+    setEditingPad(null);
+  };
+
   const editPad = editingPad !== null ? pads.find((p) => p.id === editingPad) : null;
 
   return (
@@ -56,9 +66,7 @@ export default function PadGrid() {
               activePad === pad.id ? "brightness-150" : "brightness-100"
             }`}
             style={{
-              backgroundColor: pad.sampleUrl
-                ? `${pad.color}33`
-                : "var(--surface2)",
+              backgroundColor: pad.sampleUrl ? `${pad.color}33` : "var(--surface2)",
               border: `2px solid ${pad.sampleUrl ? pad.color : "var(--border)"}`,
               boxShadow: activePad === pad.id ? `0 0 12px ${pad.color}88` : "none",
             }}
@@ -78,7 +86,7 @@ export default function PadGrid() {
         TAP to play · HOLD to edit pad
       </p>
 
-      {/* Edit overlay */}
+      {/* Pad edit overlay */}
       {editingPad !== null && editPad && (
         <div className="absolute inset-0 bg-black/80 flex items-end z-50">
           <div className="w-full bg-[var(--surface)] rounded-t-2xl p-5 pb-8">
@@ -89,12 +97,21 @@ export default function PadGrid() {
               <button onClick={() => setEditingPad(null)} className="text-gray-400 text-lg">✕</button>
             </div>
 
-            <button
-              onClick={() => openFilePicker(editPad.id)}
-              className="w-full py-3 rounded-lg bg-[var(--surface2)] border border-[var(--border)] text-sm mb-3"
-            >
-              Load Sample
-            </button>
+            {/* Load options */}
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => openFilePicker(editPad.id)}
+                className="flex-1 py-3 rounded-lg bg-[var(--surface2)] border border-[var(--border)] text-sm"
+              >
+                From Device
+              </button>
+              <button
+                onClick={() => { setBrowserForPad(editPad.id); setEditingPad(null); }}
+                className="flex-1 py-3 rounded-lg bg-[var(--accent)]/20 border border-[var(--accent)] text-sm text-[var(--accent)] font-bold"
+              >
+                Browse Sounds
+              </button>
+            </div>
 
             <div className="flex items-center gap-3 mb-3">
               <span className="text-xs text-gray-400 w-12">Pitch</span>
@@ -151,6 +168,16 @@ export default function PadGrid() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sample browser for pad */}
+      {browserForPad !== null && (
+        <SampleBrowser
+          mode="oneshot"
+          title={`LOAD TO PAD ${browserForPad + 1}`}
+          onSelect={handleBrowserSelect}
+          onClose={() => setBrowserForPad(null)}
+        />
       )}
 
       <input

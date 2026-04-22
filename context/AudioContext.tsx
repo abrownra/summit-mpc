@@ -14,6 +14,7 @@ interface AudioContextValue {
   setPads: React.Dispatch<React.SetStateAction<Pad[]>>;
   triggerPad: (padId: number) => void;
   loadSampleToPad: (padId: number, file: File) => Promise<void>;
+  loadSampleUrlToPad: (padId: number, url: string, name: string) => Promise<void>;
   masterVolume: number;
   setMasterVolume: (v: number) => void;
   startAudio: () => Promise<void>;
@@ -86,6 +87,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const loadSampleUrlToPad = useCallback(async (padId: number, url: string, name: string) => {
+    const player = new Tone.Player(url).connect(
+      masterGain.current ?? Tone.getDestination()
+    );
+    await player.load(url);
+    const old = players.current.get(padId);
+    if (old) old.dispose();
+    players.current.set(padId, player);
+    setPads((prev) =>
+      prev.map((p) =>
+        p.id === padId
+          ? { ...p, label: name.replace(/\.[^.]+$/, "").slice(0, 10).toUpperCase(), sampleUrl: url }
+          : p
+      )
+    );
+  }, []);
+
   const triggerPad = useCallback(
     async (padId: number) => {
       if (!isStarted) await startAudio();
@@ -113,6 +131,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         setPads,
         triggerPad,
         loadSampleToPad,
+        loadSampleUrlToPad,
         masterVolume,
         setMasterVolume,
         startAudio,

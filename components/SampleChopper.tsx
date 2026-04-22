@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { SampleSlice } from "@/lib/types";
 import { useAudio } from "@/context/AudioContext";
+import SampleBrowser from "@/components/SampleBrowser";
 import * as Tone from "tone";
 
 export default function SampleChopper() {
@@ -12,6 +13,8 @@ export default function SampleChopper() {
   const wsRef = useRef<WaveSurfer | null>(null);
   const [slices, setSlices] = useState<SampleSlice[]>([]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioName, setAudioName] = useState<string | null>(null);
+  const [showBrowser, setShowBrowser] = useState(false);
   const [duration, setDuration] = useState(0);
   const [selStart, setSelStart] = useState<number | null>(null);
   const [selEnd, setSelEnd] = useState<number | null>(null);
@@ -36,9 +39,22 @@ export default function SampleChopper() {
     return () => ws.destroy();
   }, []);
 
+  const loadUrl = useCallback(async (url: string, name: string) => {
+    setSlices([]);
+    setSelStart(null);
+    setSelEnd(null);
+    setAudioFile(null);
+    setAudioName(name);
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = url;
+    wsRef.current?.load(url);
+    setShowBrowser(false);
+  }, []);
+
   const loadFile = useCallback(
     async (file: File) => {
       setAudioFile(file);
+      setAudioName(file.name);
       setSlices([]);
       setSelStart(null);
       setSelEnd(null);
@@ -118,16 +134,28 @@ export default function SampleChopper() {
 
   return (
     <div className="flex flex-col h-full p-3 gap-3">
-      {!audioFile ? (
-        <div
-          className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-[var(--border)] rounded-xl gap-3"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <span className="text-4xl">🎵</span>
-          <p className="text-sm text-gray-400">Tap to load a sample</p>
+      {!audioFile && !audioName ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <button
+            onClick={() => setShowBrowser(true)}
+            className="w-full py-4 rounded-xl bg-[var(--accent)]/20 border-2 border-[var(--accent)] text-[var(--accent)] font-bold text-sm"
+          >
+            Browse Sounds
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full py-4 rounded-xl bg-[var(--surface2)] border-2 border-dashed border-[var(--border)] text-gray-400 text-sm"
+          >
+            Load from Device
+          </button>
         </div>
       ) : (
         <>
+          {audioName && !audioFile && (
+            <p className="text-[10px] text-gray-500 truncate shrink-0">
+              {audioName}
+            </p>
+          )}
           <div
             className="relative rounded-lg overflow-hidden bg-[var(--surface2)] border border-[var(--border)]"
             onPointerDown={handlePointerDown}
@@ -205,12 +233,31 @@ export default function SampleChopper() {
         </>
       )}
 
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        className="py-2 text-xs text-gray-500 border border-[var(--border)] rounded-lg"
-      >
-        {audioFile ? `↺ Replace: ${audioFile.name}` : "Load Sample"}
-      </button>
+      {(audioFile || audioName) && (
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => setShowBrowser(true)}
+            className="flex-1 py-2 text-xs text-[var(--accent)] border border-[var(--accent)] rounded-lg"
+          >
+            Browse
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex-1 py-2 text-xs text-gray-500 border border-[var(--border)] rounded-lg truncate"
+          >
+            ↺ {audioName ?? audioFile?.name ?? "Replace"}
+          </button>
+        </div>
+      )}
+
+      {showBrowser && (
+        <SampleBrowser
+          mode="loop"
+          title="LOAD TO CHOPPER"
+          onSelect={(url, name) => loadUrl(url, name)}
+          onClose={() => setShowBrowser(false)}
+        />
+      )}
 
       <input
         ref={fileInputRef}
