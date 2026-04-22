@@ -6,28 +6,44 @@ import SampleBrowser from "@/components/SampleBrowser";
 
 export default function PadGrid() {
   const { pads, triggerPad, loadSampleToPad, loadSampleUrlToPad, setPads, beatMatchPad, beatMatchInfo, bpm } = useAudio();
-  const [activePad, setActivePad] = useState<number | null>(null);
+  const [activePads, setActivePads] = useState<Set<number>>(new Set());
   const [editingPad, setEditingPad] = useState<number | null>(null);
   const [browserForPad, setBrowserForPad] = useState<number | null>(null);
   const [matchingPad, setMatchingPad] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPadRef = useRef<number | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressPad = useRef<number | null>(null);
+  const activePointerCount = useRef(0);
 
   const handlePadDown = useCallback(
     (padId: number) => {
-      setActivePad(padId);
+      activePointerCount.current += 1;
+      // Cancel any pending long-press the moment a second finger lands
+      if (activePointerCount.current > 1) {
+        if (longPressTimer.current) clearTimeout(longPressTimer.current);
+        longPressPad.current = null;
+      }
+      setActivePads(prev => new Set(prev).add(padId));
       triggerPad(padId);
-      longPressTimer.current = setTimeout(() => {
-        setEditingPad(padId);
-      }, 600);
+      if (activePointerCount.current === 1) {
+        longPressPad.current = padId;
+        longPressTimer.current = setTimeout(() => {
+          setEditingPad(padId);
+          longPressPad.current = null;
+        }, 600);
+      }
     },
     [triggerPad]
   );
 
-  const handlePadUp = useCallback(() => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    setTimeout(() => setActivePad(null), 80);
+  const handlePadUp = useCallback((padId: number) => {
+    activePointerCount.current = Math.max(0, activePointerCount.current - 1);
+    if (longPressTimer.current && longPressPad.current === padId) {
+      clearTimeout(longPressTimer.current);
+      longPressPad.current = null;
+    }
+    setTimeout(() => setActivePads(prev => { const n = new Set(prev); n.delete(padId); return n; }), 80);
   }, []);
 
   const openFilePicker = (padId: number) => {
@@ -61,15 +77,15 @@ export default function PadGrid() {
           <button
             key={pad.id}
             onPointerDown={() => handlePadDown(pad.id)}
-            onPointerUp={handlePadUp}
-            onPointerLeave={handlePadUp}
+            onPointerUp={() => handlePadUp(pad.id)}
+            onPointerLeave={() => handlePadUp(pad.id)}
             className={`rounded-lg flex flex-col items-center justify-center gap-1 select-none transition-transform active:scale-95 ${
-              activePad === pad.id ? "brightness-150" : "brightness-100"
+              activePads.has(pad.id) ? "brightness-150" : "brightness-100"
             }`}
             style={{
               backgroundColor: pad.sampleUrl ? `${pad.color}33` : "var(--surface2)",
               border: `2px solid ${pad.sampleUrl ? pad.color : "var(--border)"}`,
-              boxShadow: activePad === pad.id ? `0 0 12px ${pad.color}88` : "none",
+              boxShadow: activePads.has(pad.id) ? `0 0 12px ${pad.color}88` : "none",
             }}
           >
             <div
