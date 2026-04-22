@@ -17,15 +17,36 @@ interface IASearchDoc {
   creator?: string;
 }
 
-// Build search query per mode
 function buildQuery(q: string, mode: Mode): string {
-  const base = `(${q}) AND mediatype:audio`;
-  if (mode === "oneshot") return `${base} AND format:MP3 AND avg_rating:[3 TO 5]`;
-  if (mode === "loop")    return `${base} AND (subject:loop OR subject:"drum loop" OR subject:"sample") AND format:MP3`;
-  return `${base} AND format:MP3`;
+  if (mode === "oneshot") {
+    // Require percussion/sample subject tags AND short audio — excludes speeches, albums, dialogues
+    return (
+      `(title:(${q}) OR subject:(${q})) AND mediatype:audio AND format:MP3` +
+      ` AND (subject:(sample OR samples OR "drum sample" OR "drum samples" OR percussion` +
+      ` OR "sound effect" OR "sound effects" OR sfx OR foley OR "drum kit" OR "drum machine"` +
+      ` OR "one shot" OR "oneshot" OR "hit" OR "stab") OR collection:opensource_audio)`
+    );
+  }
+  if (mode === "loop") {
+    return (
+      `(title:(${q}) OR subject:(${q})) AND mediatype:audio AND format:MP3` +
+      ` AND (subject:(loop OR loops OR "drum loop" OR "beat" OR "instrumental" OR sample OR samples)` +
+      ` OR title:(loop OR loops OR beat OR instrumental))`
+    );
+  }
+  // songs — broad
+  return `(${q}) AND mediatype:audio AND format:MP3`;
 }
 
-async function resolveAudioUrl(identifier: string): Promise<{ url: string; duration: number } | null> {
+// Max duration per mode (seconds) — skip files longer than this
+const MAX_DURATION: Partial<Record<Mode, number>> = {
+  oneshot: 8,
+};
+
+async function resolveAudioUrl(
+  identifier: string,
+  maxDuration?: number
+): Promise<{ url: string; duration: number } | null> {
   try {
     const res = await fetch(`https://archive.org/metadata/${identifier}/files`, {
       signal: AbortSignal.timeout(5000),
@@ -34,16 +55,28 @@ async function resolveAudioUrl(identifier: string): Promise<{ url: string; durat
     const data: { result: IAFile[] } = await res.json();
     const files: IAFile[] = data.result ?? [];
 
-    // Prefer MP3, fallback to OGG
-    const audio = files.find((f) => f.name.toLowerCase().endsWith(".mp3"))
-      ?? files.find((f) => ["ogg", "flac", "wav"].some((ext) => f.name.toLowerCase().endsWith(ext)));
+    // Prefer MP3, fallback to OGG/WAV
+    const audio =
+      files.find((f) => f.name.toLowerCase().endsWith(".mp3")) ??
+      files.find((f) =>
+        ["ogg", "wav"].some((ext) => f.name.toLowerCase().endsWith(ext))
+      );
 
     if (!audio) return null;
 
-    const encodedName = audio.name.split("/").map(encodeURIComponent).join("/");
+    const duration = audio.length ? parseFloat(audio.length) : 0;
+
+    // Enforce duration limit — rejects dialogues, speeches, full albums
+    if (maxDuration && duration > 0 && duration > maxDuration) return null;
+
+    const encodedName = audio.name
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+
     return {
       url: `https://archive.org/download/${identifier}/${encodedName}`,
-      duration: audio.length ? parseFloat(audio.length) : 0,
+      duration,
     };
   } catch {
     return null;
@@ -60,8 +93,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [], next: false });
   }
 
-  const rows = 10; // fetch 10, some may have no audio
-  const start = (page - 1) * rows;
+  // Fetch more rows to compensate for ones filtered out by duration
+  const rows = mode === "oneshot" ? 20 : 10;
+  const start = (page - 1) * 10;
 
   const iaParams = new URLSearchParams({
     q: buildQuery(query, mode),
@@ -78,16 +112,21 @@ export async function GET(req: NextRequest) {
   );
 
   if (!searchRes.ok) {
-    return NextResponse.json({ error: "Internet Archive search failed" }, { status: 502 });
+    return NextResponse.json(
+      { error: "Internet Archive search failed" },
+      { status: 502 }
+    );
   }
 
   const searchData = await searchRes.json();
   const docs: IASearchDoc[] = searchData.response?.docs ?? [];
 
+  const maxDuration = MAX_DURATION[mode];
+
   // Resolve audio URLs in parallel
   const resolved = await Promise.all(
     docs.map(async (doc) => {
-      const audio = await resolveAudioUrl(doc.identifier);
+      const audio = await resolveAudioUrl(doc.identifier, maxDuration);
       if (!audio) return null;
       return {
         id: doc.identifier,
@@ -103,7 +142,7 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  const results = resolved.filter(Boolean);
+  const results = resolved.filter(Boolean).slice(0, 10);
 
   return NextResponse.json({
     results,

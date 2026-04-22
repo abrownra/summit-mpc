@@ -29,6 +29,12 @@ const TABS: { id: BrowserMode; label: string }[] = [
   { id: "song",    label: "SONGS" },
 ];
 
+const PRESETS: Record<BrowserMode, string[]> = {
+  oneshot: ["kick", "snare", "hi-hat", "clap", "808", "open hat", "crash", "perc", "tom", "snap"],
+  loop:    ["boom bap", "trap", "jazz drums", "funk", "lo-fi", "drill", "afrobeat", "house"],
+  song:    ["soul", "funk", "jazz", "blues", "gospel", "r&b", "hip hop", "reggae"],
+};
+
 function formatDur(s: number) {
   if (s < 60) return `${s.toFixed(1)}s`;
   return `${Math.floor(s / 60)}m${Math.floor(s % 60)}s`;
@@ -143,8 +149,25 @@ export default function SampleBrowser({ mode: initMode = "oneshot", onSelect, on
           ))}
         </div>
 
+        {/* Presets */}
+        <div className="flex gap-1.5 px-3 py-2 overflow-x-auto shrink-0 scrollbar-none">
+          {PRESETS[mode].map((preset) => (
+            <button
+              key={preset}
+              onClick={() => {
+                setQuery(preset);
+                setResults([]);
+                search(preset, mode, 1);
+              }}
+              className="shrink-0 px-2.5 py-1 rounded-full bg-[var(--surface2)] border border-[var(--border)] text-[10px] text-gray-400 whitespace-nowrap hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+            >
+              {preset.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
         {/* Search */}
-        <form onSubmit={handleSearch} className="flex gap-2 px-3 py-2 shrink-0">
+        <form onSubmit={handleSearch} className="flex gap-2 px-3 pb-2 shrink-0">
           <input
             ref={inputRef}
             value={query}
