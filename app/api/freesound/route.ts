@@ -1,84 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Jamendo: songs & loops — free key at developer.jamendo.com
-const JAMENDO_ID = process.env.JAMENDO_CLIENT_ID;
-// Pixabay: one-shots & sfx — free key at pixabay.com/api/docs/
-const PIXABAY_KEY = process.env.PIXABAY_API_KEY;
+// Internet Archive — fully open, no API key required
 
 type Mode = "oneshot" | "loop" | "song";
 
-async function searchJamendo(query: string, mode: Mode, page: number) {
-  if (!JAMENDO_ID) throw new Error("JAMENDO_CLIENT_ID not set");
-
-  const offset = (page - 1) * 15;
-  const params = new URLSearchParams({
-    client_id: JAMENDO_ID,
-    format: "json",
-    limit: "15",
-    offset: String(offset),
-    namesearch: query,
-    audioformat: "mp31",
-    include: "musicinfo",
-  });
-
-  // Bias by duration for loops vs songs
-  if (mode === "loop") {
-    params.set("durationbetween", "10_120");
-    params.set("tags", "loop");
-  }
-
-  const res = await fetch(`https://api.jamendo.com/v3.0/tracks/?${params}`);
-  if (!res.ok) throw new Error("Jamendo API error");
-  const data = await res.json();
-
-  return {
-    results: data.results.map((t: {
-      id: number; name: string; duration: number;
-      artist_name: string; audio: string; tags?: string[];
-    }) => ({
-      id: `j_${t.id}`,
-      name: t.name,
-      duration: t.duration,
-      username: t.artist_name,
-      previews: { "preview-hq-mp3": t.audio, "preview-lq-mp3": t.audio },
-      tags: t.tags ?? [],
-    })),
-    next: data.results.length === 15 ? true : false,
-  };
+interface IAFile {
+  name: string;
+  format?: string;
+  length?: string;
+  size?: string;
 }
 
-async function searchPixabay(query: string, page: number) {
-  if (!PIXABAY_KEY) throw new Error("PIXABAY_API_KEY not set");
+interface IASearchDoc {
+  identifier: string;
+  title?: string;
+  creator?: string;
+}
 
-  const params = new URLSearchParams({
-    key: PIXABAY_KEY,
-    q: query,
-    media_type: "music",
-    per_page: "15",
-    page: String(page),
-  });
+// Build search query per mode
+function buildQuery(q: string, mode: Mode): string {
+  const base = `(${q}) AND mediatype:audio`;
+  if (mode === "oneshot") return `${base} AND format:MP3 AND avg_rating:[3 TO 5]`;
+  if (mode === "loop")    return `${base} AND (subject:loop OR subject:"drum loop" OR subject:"sample") AND format:MP3`;
+  return `${base} AND format:MP3`;
+}
 
-  const res = await fetch(`https://pixabay.com/api/?${params}`);
-  if (!res.ok) throw new Error("Pixabay API error");
-  const data = await res.json();
+async function resolveAudioUrl(identifier: string): Promise<{ url: string; duration: number } | null> {
+  try {
+    const res = await fetch(`https://archive.org/metadata/${identifier}/files`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data: { result: IAFile[] } = await res.json();
+    const files: IAFile[] = data.result ?? [];
 
-  return {
-    results: (data.hits ?? []).map((h: {
-      id: number; tags: string; duration: number;
-      user: string; audio?: string; previewURL?: string;
-    }) => ({
-      id: `p_${h.id}`,
-      name: h.tags,
-      duration: h.duration ?? 0,
-      username: h.user,
-      previews: {
-        "preview-hq-mp3": h.audio ?? h.previewURL ?? "",
-        "preview-lq-mp3": h.audio ?? h.previewURL ?? "",
-      },
-      tags: h.tags.split(", "),
-    })),
-    next: data.hits?.length === 15,
-  };
+    // Prefer MP3, fallback to OGG
+    const audio = files.find((f) => f.name.toLowerCase().endsWith(".mp3"))
+      ?? files.find((f) => ["ogg", "flac", "wav"].some((ext) => f.name.toLowerCase().endsWith(ext)));
+
+    if (!audio) return null;
+
+    const encodedName = audio.name.split("/").map(encodeURIComponent).join("/");
+    return {
+      url: `https://archive.org/download/${identifier}/${encodedName}`,
+      duration: audio.length ? parseFloat(audio.length) : 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -91,14 +60,53 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [], next: false });
   }
 
-  try {
-    // One-shots → Pixabay (short sfx); loops + songs → Jamendo
-    const data = mode === "oneshot"
-      ? await searchPixabay(query, page)
-      : await searchJamendo(query, mode, page);
+  const rows = 10; // fetch 10, some may have no audio
+  const start = (page - 1) * rows;
 
-    return NextResponse.json(data);
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  const iaParams = new URLSearchParams({
+    q: buildQuery(query, mode),
+    "fl[]": "identifier,title,creator",
+    rows: String(rows),
+    start: String(start),
+    output: "json",
+    "sort[]": "downloads desc",
+  });
+
+  const searchRes = await fetch(
+    `https://archive.org/advancedsearch.php?${iaParams}`,
+    { signal: AbortSignal.timeout(8000) }
+  );
+
+  if (!searchRes.ok) {
+    return NextResponse.json({ error: "Internet Archive search failed" }, { status: 502 });
   }
+
+  const searchData = await searchRes.json();
+  const docs: IASearchDoc[] = searchData.response?.docs ?? [];
+
+  // Resolve audio URLs in parallel
+  const resolved = await Promise.all(
+    docs.map(async (doc) => {
+      const audio = await resolveAudioUrl(doc.identifier);
+      if (!audio) return null;
+      return {
+        id: doc.identifier,
+        name: doc.title || doc.identifier,
+        duration: audio.duration,
+        username: doc.creator || "Internet Archive",
+        previews: {
+          "preview-hq-mp3": audio.url,
+          "preview-lq-mp3": audio.url,
+        },
+        tags: [],
+      };
+    })
+  );
+
+  const results = resolved.filter(Boolean);
+
+  return NextResponse.json({
+    results,
+    next: docs.length === rows,
+  });
 }
